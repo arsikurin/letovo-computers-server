@@ -1,0 +1,29 @@
+services:
+    app:
+        #    restart: always
+        build:
+            dockerfile: Dockerfile
+            context: .
+        env_file:
+            - .env
+
+    db:
+        image: postgres:15.0-bullseye
+        #        restart: always
+        ports:
+            - 5432:5432
+        env_file:
+            - .env
+        environment:
+            POSTGRES_DB: ${PG_DBNAME}
+            POSTGRES_USER: ${PG_USER}
+            POSTGRES_PASSWORD: ${PG_PASSWORD}
+        volumes:
+            - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+            - ./db-data:/var/lib/postgresql/data
+        healthcheck:
+            test: [ "CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DBNAME}" ]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 10s
