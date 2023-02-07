@@ -18,9 +18,9 @@ func (s Status) String() string {
 	case Scanned:
 		return "scanned new tag"
 	case Disconnected:
-		return "arduino with RFID scanner disconnected"
+		return "arduino with RFID reader disconnected"
 	default:
-		return "unknown"
+		return "unknown status"
 	}
 }
 

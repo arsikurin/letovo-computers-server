@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/letovo-computers-management.iml" filepath="$PROJECT_DIR$/.idea/letovo-computers-management.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/letovo-computers-server.iml" filepath="$PROJECT_DIR$/.idea/letovo-computers-server.iml" />
     </modules>
   </component>
 </project>
