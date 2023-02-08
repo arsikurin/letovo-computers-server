@@ -1,4 +1,4 @@
 db-data/
 .env
 sqlboiler.toml
-letovo-computers.log
+logs/

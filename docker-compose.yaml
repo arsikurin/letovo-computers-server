@@ -1,29 +1,38 @@
+version: "3.9"
+
 services:
     app:
-        #    restart: always
+        container_name: app
         build:
+            target: release
             dockerfile: Dockerfile
             context: .
         env_file:
             - .env
+        depends_on:
+            db:
+                condition: service_healthy
+        restart: on-failure
+        volumes:
+            - ./logs:/var/log/letovo-computers
 
     db:
+        container_name: postgres
         image: postgres:15.0-bullseye
-        #        restart: always
+        restart: unless-stopped
         ports:
-            - 5432:5432
+            - ${PGPORT}:${PGPORT}
         env_file:
             - .env
         environment:
-            POSTGRES_DB: ${PG_DBNAME}
-            POSTGRES_USER: ${PG_USER}
-            POSTGRES_PASSWORD: ${PG_PASSWORD}
+            POSTGRES_DB: ${PGDATABASE}
+            POSTGRES_USER: ${PGUSER}
+            POSTGRES_PASSWORD: ${PGPASSWORD}
         volumes:
             - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
             - ./db-data:/var/lib/postgresql/data
         healthcheck:
-            test: [ "CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DBNAME}" ]
+            test: [ "CMD-SHELL", "pg_isready -U ${PGUSER} -d ${PGDATABASE}" ]
             interval: 10s
             timeout: 5s
             retries: 5
-            start_period: 10s

@@ -66,9 +66,7 @@ func init() {
 }
 
 func main() {
-	fmt.Println(`
-server started
-	`)
+	log.Debug().Msg("Starting the server")
 
 	err := godotenv.Load(".env")
 	if err != nil {
@@ -229,6 +227,8 @@ func start(client mqtt.Client, sigs chan os.Signal) error {
 	)
 
 	wg.Wait()
+
+	log.Info().Msg("Server is ready to handle requests")
 
 	select {
 	case <-sigs:

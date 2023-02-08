@@ -19,7 +19,7 @@ func Init() mqtt.Client {
 			log.Warn().Err(err).Msg("Connection lost to broker")
 		}).
 		SetOnConnectHandler(func(client mqtt.Client) {
-			log.Info().Msg("Connected to broker")
+			log.Debug().Msg("Connected to broker")
 		}).
 		SetBinaryWill(
 			os.Getenv("SERVER_WILL_TOPIC"), []byte("{\"message\":\"server disconnected\"}"), 2, true,
