@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -20,23 +21,14 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/volatiletech/sqlboiler/v4/boil"
+	"gopkg.in/natefinch/lumberjack.v2"
 
+	"letovo-computers-server/broker"
 	"letovo-computers-server/models"
 	"letovo-computers-server/types"
 )
 
-const (
-	serverWillTopic    = "comps/server/will"
-	arduinoWillTopic   = "comps/arduino/will"
-	serverStreamTopic  = "comps/server/stream"
-	arduinoStreamTopic = "comps/arduino/stream"
-)
-
-func main() {
-	fmt.Println(`
-server started
-	`)
-
+func init() {
 	debug := flag.Bool("debug", false, "sets log level to debug")
 	flag.Parse()
 
@@ -46,7 +38,39 @@ server started
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	}
 
-	initLogger()
+	zerolog.TimestampFieldName = "timestamp"
+	zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
+		return fmt.Sprintf("%s:%d", file, line)
+	}
+
+	fileLogger := lumberjack.Logger{
+		Filename:   "/var/log/letovo-computers/server.log",
+		MaxSize:    500,
+		MaxAge:     30,
+		MaxBackups: 3,
+		LocalTime:  false,
+		Compress:   false,
+	}
+
+	log.Logger = zerolog.New(zerolog.MultiLevelWriter(os.Stdout, &fileLogger)).With().Timestamp().Caller().Logger()
+
+	// rotateChan := make(chan os.Signal, 1)
+	// signal.Notify(rotateChan, syscall.SIGHUP)
+	// go func() {
+	// 	for {
+	// 		<-rotateChan
+	// 		err := fileLogger.Rotate()
+	// 		if err != nil {
+	// 			log.Error().Err(err).Msg("failed to rotate log file")
+	// 		}
+	// 	}
+	// }()
+}
+
+func main() {
+	fmt.Println(`
+server started
+	`)
 
 	err := godotenv.Load(".env")
 	if err != nil {
@@ -54,8 +78,9 @@ server started
 	}
 
 	db, err := sql.Open("postgres", fmt.Sprintf(
-		"postgres://%s:%s@%s:5432/%s?sslmode=disable",
-		os.Getenv("PG_USER"), os.Getenv("PG_PASSWORD"), os.Getenv("PG_HOST"), os.Getenv("PG_DBNAME"),
+		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		os.Getenv("PG_USER"), os.Getenv("PG_PASSWORD"), os.Getenv("PG_HOST"),
+		os.Getenv("PG_PORT"), os.Getenv("PG_DBNAME"), os.Getenv("PG_SSLMODE"),
 	))
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to db")
@@ -73,54 +98,36 @@ server started
 			log.Error().Err(err).Msg("failed to close db")
 		}
 	}(db)
-	client := initBroker()
+
+	client := broker.Init()
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		log.Fatal().Err(token.Error()).Msg("failed to connect to broker")
 	}
 
-	quit := make(chan os.Signal, 1)
-	go func() {
-		if err := start(client, quit); err != nil {
-			log.Error().Err(err).Msg("Shutting down the server")
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-			signal.Notify(quit, os.Interrupt)
+	quit := make(chan bool, 1)
+
+	go func() {
+		if err := start(client, sigs); err != nil {
+			log.Error().Err(err).Msg("Shutting down the server")
 		}
+
+		quit <- true
 	}()
 
-	signal.Notify(quit, os.Interrupt)
 	<-quit
+	log.Info().Msg("Gracefully shut down the server")
 }
 
-func initLogger() {
-	zerolog.TimeFieldFormat = time.RFC3339 // TimeFormatUnix
-	zerolog.TimestampFieldName = "timestamp"
-	zerolog.LevelFieldName = "level"
-	zerolog.MessageFieldName = "message"
-	zerolog.ErrorFieldName = "error"
-	zerolog.CallerFieldName = "caller"
-	zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
-		return fmt.Sprintf("%s:%d", file, line)
-	}
-
-	runLogFile, err := os.OpenFile(
-		"letovo-computers.log",
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
-		0664,
-	)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to open or create log file")
-	}
-
-	log.Logger = zerolog.New(runLogFile).With().Timestamp().Caller().Logger()
-}
-
-func start(client mqtt.Client, doneChan chan os.Signal) error {
+func start(client mqtt.Client, sigs chan os.Signal) error {
 	ctx := context.Background()
 	var wg sync.WaitGroup
 
-	publish(&wg, client, serverStreamTopic, "hi from go")
+	broker.Publish(&wg, client, os.Getenv("SERVER_STREAM_TOPIC"), "hi from go")
 
-	subscribe(&wg, client, arduinoStreamTopic, 2, func(ctx context.Context) func(client mqtt.Client, resp mqtt.Message) {
+	broker.Subscribe(&wg, client, os.Getenv("ARDUINO_STREAM_TOPIC"), 2, func(ctx context.Context) func(client mqtt.Client, resp mqtt.Message) {
 		return func(client mqtt.Client, resp mqtt.Message) {
 			message := new(types.MQTTMessage)
 
@@ -200,7 +207,7 @@ func start(client mqtt.Client, doneChan chan os.Signal) error {
 		}
 	}(ctx))
 
-	subscribe(&wg, client, arduinoWillTopic, 2, func(ctx context.Context) func(client mqtt.Client, resp mqtt.Message) {
+	broker.Subscribe(&wg, client, os.Getenv("ARDUINO_WILL_TOPIC"), 2, func(ctx context.Context) func(client mqtt.Client, resp mqtt.Message) {
 		return func(client mqtt.Client, resp mqtt.Message) {
 			log.Info().Msgf("arduino %s is offline", resp.Topic())
 			log.Debug().Msgf("%s %s %t %d %t %d\n", resp.Topic(), resp.Payload(), resp.Duplicate(), resp.Qos(), resp.Retained(), resp.MessageID())
@@ -210,7 +217,7 @@ func start(client mqtt.Client, doneChan chan os.Signal) error {
 	wg.Wait()
 
 	select {
-	case <-doneChan:
+	case <-sigs:
 		client.Disconnect(250)
 	}
 
@@ -218,51 +225,4 @@ func start(client mqtt.Client, doneChan chan os.Signal) error {
 	defer cancel()
 
 	return nil
-}
-
-func initBroker() mqtt.Client {
-	opts := mqtt.NewClientOptions().
-		AddBroker(fmt.Sprintf("tls://%s:%s", os.Getenv("MQTT_HOST"), os.Getenv("MQTT_PORT"))).
-		SetClientID(os.Getenv("MQTT_CLIENT_ID")).
-		SetUsername(os.Getenv("MQTT_USER")).
-		SetPassword(os.Getenv("MQTT_PASS")).
-		SetConnectionLostHandler(func(client mqtt.Client, err error) {
-			log.Warn().Err(err).Msg("Connection lost to broker")
-		}).
-		SetOnConnectHandler(func(client mqtt.Client) {
-			log.Info().Msg("Connected to broker")
-		}).
-		SetBinaryWill(
-			serverWillTopic, []byte("{\"message\":\"server disconnected\"}"), 2, true,
-		)
-
-	return mqtt.NewClient(opts)
-}
-
-func subscribe(wg *sync.WaitGroup, client mqtt.Client, topic string, qos byte, callback func(client mqtt.Client, resp mqtt.Message)) {
-	wg.Add(1)
-	t := client.Subscribe(topic, qos, callback)
-
-	go func() {
-		defer wg.Done()
-
-		<-t.Done()
-		if t.Error() != nil {
-			log.Error().Err(t.Error()).Msgf("failed to subscribe to %s", topic)
-		}
-	}()
-}
-
-func publish(wg *sync.WaitGroup, client mqtt.Client, topic string, payload string) {
-	wg.Add(1)
-	t := client.Publish(topic, 2, true, payload)
-
-	go func() {
-		defer wg.Done()
-
-		<-t.Done()
-		if t.Error() != nil {
-			log.Error().Err(t.Error()).Msg("failed to publish message")
-		}
-	}()
 }

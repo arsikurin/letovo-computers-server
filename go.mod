@@ -10,6 +10,7 @@ require (
 	github.com/rs/zerolog v1.28.0
 	github.com/volatiletech/sqlboiler/v4 v4.13.0
 	github.com/volatiletech/strmangle v0.0.4
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (
