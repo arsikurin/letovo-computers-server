@@ -4,12 +4,9 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="69f03c9e-7e1e-4070-b48a-a1d46c4e4743" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/broker/broker.go" afterDir="false" />
+    <list default="true" id="69f03c9e-7e1e-4070-b48a-a1d46c4e4743" name="Changes" comment="add stdout and file loggers&#10;add graceful shutdown&#10;a bit of refactoring">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/docker-compose.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -54,6 +51,10 @@
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="add stdout and file loggers&#10;add graceful shutdown&#10;a bit of refactoring" />
+    <option name="LAST_COMMIT_MESSAGE" value="add stdout and file loggers&#10;add graceful shutdown&#10;a bit of refactoring" />
   </component>
   <component name="VgoProject">
     <settings-migrated>true</settings-migrated>

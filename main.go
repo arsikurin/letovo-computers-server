@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/joho/godotenv"
@@ -44,15 +43,14 @@ func init() {
 	}
 
 	fileLogger := lumberjack.Logger{
-		Filename:   "/var/log/letovo-computers/server.log",
-		MaxSize:    500,
-		MaxAge:     30,
-		MaxBackups: 3,
-		LocalTime:  false,
-		Compress:   false,
+		Filename:  "/var/log/letovo-computers/server.log",
+		MaxSize:   500,
+		MaxAge:    30,
+		LocalTime: true,
+		Compress:  true,
 	}
 
-	log.Logger = zerolog.New(zerolog.MultiLevelWriter(os.Stdout, &fileLogger)).With().Timestamp().Caller().Logger()
+	log.Logger = zerolog.New(zerolog.MultiLevelWriter(os.Stdout, &fileLogger)).With().Timestamp().Logger()
 
 	// rotateChan := make(chan os.Signal, 1)
 	// signal.Notify(rotateChan, syscall.SIGHUP)
@@ -111,108 +109,124 @@ server started
 
 	go func() {
 		if err := start(client, sigs); err != nil {
-			log.Error().Err(err).Msg("Shutting down the server")
+			log.Error().Err(err).Msg("Shutting down the server due to an error")
 		}
 
 		quit <- true
 	}()
 
 	<-quit
-	log.Info().Msg("Gracefully shut down the server")
+	log.Debug().Msg("Gracefully shut down the server")
 }
 
 func start(client mqtt.Client, sigs chan os.Signal) error {
 	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	var wg sync.WaitGroup
 
 	broker.Publish(&wg, client, os.Getenv("SERVER_STREAM_TOPIC"), "hi from go")
 
-	broker.Subscribe(&wg, client, os.Getenv("ARDUINO_STREAM_TOPIC"), 2, func(ctx context.Context) func(client mqtt.Client, resp mqtt.Message) {
-		return func(client mqtt.Client, resp mqtt.Message) {
-			message := new(types.MQTTMessage)
+	broker.Subscribe(&wg, client, os.Getenv("ARDUINO_STREAM_TOPIC"), 2,
+		func(ctx context.Context) func(client mqtt.Client, resp mqtt.Message) {
+			return func(client mqtt.Client, resp mqtt.Message) {
+				message := new(types.MQTTMessage)
 
-			err := json.Unmarshal(resp.Payload(), message)
-			if err != nil {
-				log.Error().Err(err).Msg("failed to unmarshal message")
-				return
-			}
-
-			log.Debug().
-				Str("RFID", message.RFID).
-				Str("slots", message.Slots).
-				Int("status", int(message.Status)).
-				Msg(message.Message)
-
-			switch message.Status {
-			case types.Placed:
-				log.Info().
-					Str("RFID", message.RFID).
-					Str("slots", message.Slots).
-					Msgf("%s placed computer to %s", message.RFID, message.Slots)
-
-				for _, slotID := range strings.Split(message.Slots, ";") {
-					if slotID == "" {
-						continue
-					}
-
-					slot := models.Slot{
-						ID:      slotID,
-						TakenBy: message.RFID,
-						IsTaken: false,
-					}
-
-					err = slot.UpsertG(ctx, true, []string{"id"},
-						boil.Whitelist("taken_by", "is_taken"), boil.Infer())
-					if err != nil {
-						log.Error().Err(err).Msg("failed to upsert slot to db in Placed case")
-					}
-				}
-
-			case types.Taken:
-				log.Info().
-					Str("RFID", message.RFID).
-					Str("slots", message.Slots).
-					Msgf("%s took computer from %s", message.RFID, message.Slots)
-
-				for _, slotID := range strings.Split(message.Slots, ";") {
-					if slotID == "" {
-						continue
-					}
-
-					slot := models.Slot{
-						ID:      slotID,
-						TakenBy: message.RFID,
-						IsTaken: true,
-					}
-
-					err = slot.UpsertG(ctx, true, []string{"id"},
-						boil.Whitelist("taken_by", "is_taken"), boil.Infer())
-					if err != nil {
-						log.Error().Err(err).Msg("failed to upsert slot to db in Taken case")
-					}
-				}
-
-			case types.Scanned:
-				log.Info().Msgf("scanned a %s tag ", message.RFID)
-				user := models.User{
-					ID: message.RFID,
-				}
-
-				err := user.UpsertG(ctx, true, []string{"id"},
-					boil.Whitelist("login"), boil.Infer())
+				err := json.Unmarshal(resp.Payload(), message)
 				if err != nil {
-					log.Error().Err(err).Msg("failed to upsert user to db in Scanned case")
+					log.Error().Err(err).Msg("failed to unmarshal message")
+					return
+				}
+
+				switch message.Status {
+				case types.Placed:
+					log.Info().
+						Str("RFID", message.RFID).
+						Str("slots", message.Slots).
+						Int("status", int(message.Status)).
+						Msgf("%s placed computer to %s", message.RFID, message.Slots)
+
+					for _, slotID := range strings.Split(message.Slots, ";") {
+						if slotID == "" {
+							continue
+						}
+
+						slot := models.Slot{
+							ID:      slotID,
+							TakenBy: message.RFID,
+							IsTaken: false,
+						}
+
+						err = slot.UpsertG(ctx, true, []string{"id"},
+							boil.Whitelist("taken_by", "is_taken"), boil.Infer(),
+						)
+						if err != nil {
+							log.Error().Err(err).Msg("failed to upsert slot to db in Placed case")
+						}
+					}
+
+				case types.Taken:
+					log.Info().
+						Str("RFID", message.RFID).
+						Str("slots", message.Slots).
+						Int("status", int(message.Status)).
+						Msgf("%s took computer from %s", message.RFID, message.Slots)
+
+					for _, slotID := range strings.Split(message.Slots, ";") {
+						if slotID == "" {
+							continue
+						}
+
+						slot := models.Slot{
+							ID:      slotID,
+							TakenBy: message.RFID,
+							IsTaken: true,
+						}
+
+						err = slot.UpsertG(ctx, true, []string{"id"},
+							boil.Whitelist("taken_by", "is_taken"), boil.Infer(),
+						)
+						if err != nil {
+							log.Error().Err(err).Msg("failed to upsert slot to db in Taken case")
+						}
+					}
+
+				case types.Scanned:
+					log.Info().
+						Str("RFID", message.RFID).
+						Int("status", int(message.Status)).
+						Msgf("scanned the %s tag ", message.RFID)
+
+					user := models.User{
+						ID: message.RFID,
+					}
+
+					err := user.UpsertG(ctx, true, []string{"id"},
+						boil.Whitelist("login"), boil.Infer(),
+					)
+					if err != nil {
+						log.Error().Err(err).Msg("failed to upsert user to db in Scanned case")
+					}
+
+				default:
+					log.Warn().
+						Str("RFID", message.RFID).
+						Str("slots", message.Slots).
+						Int("status", int(message.Status)).
+						Msg(message.Message)
 				}
 			}
-		}
-	}(ctx))
+		}(ctx))
 
-	broker.Subscribe(&wg, client, os.Getenv("ARDUINO_WILL_TOPIC"), 2, func(ctx context.Context) func(client mqtt.Client, resp mqtt.Message) {
-		return func(client mqtt.Client, resp mqtt.Message) {
-			log.Info().Msgf("arduino %s is offline", resp.Topic())
-			log.Debug().Msgf("%s %s %t %d %t %d\n", resp.Topic(), resp.Payload(), resp.Duplicate(), resp.Qos(), resp.Retained(), resp.MessageID())
-		}
-	}(ctx))
+	broker.Subscribe(&wg, client, os.Getenv("ARDUINO_WILL_TOPIC"), 2,
+		func(ctx context.Context) func(client mqtt.Client, resp mqtt.Message) {
+			return func(client mqtt.Client, resp mqtt.Message) {
+				log.Warn().Msgf("arduino %s is offline", resp.Payload())
+				log.Debug().Msgf("%s %s %t %d %t %d\n", resp.Topic(), resp.Payload(), resp.Duplicate(), resp.Qos(), resp.Retained(), resp.MessageID())
+			}
+		}(ctx),
+	)
 
 	wg.Wait()
 
@@ -220,9 +234,6 @@ func start(client mqtt.Client, sigs chan os.Signal) error {
 	case <-sigs:
 		client.Disconnect(250)
 	}
-
-	_, cancel := context.WithTimeout(ctx, time.Second*10) //nolint:gomnd
-	defer cancel()
 
 	return nil
 }
