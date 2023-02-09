@@ -43,11 +43,10 @@ func init() {
 	}
 
 	fileLogger := lumberjack.Logger{
-		Filename:  "/var/log/letovo-computers/server.log",
-		MaxSize:   500,
-		MaxAge:    30,
-		LocalTime: true,
-		Compress:  true,
+		Filename: "/var/log/letovo-computers/server.log",
+		MaxSize:  1 << 8, // 256 MB
+		MaxAge:   30,
+		Compress: true,
 	}
 
 	log.Logger = zerolog.New(zerolog.MultiLevelWriter(os.Stdout, &fileLogger)).With().Timestamp().Logger()
@@ -75,8 +74,8 @@ func main() {
 
 	db, err := sql.Open("postgres", fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		os.Getenv("PG_USER"), os.Getenv("PG_PASSWORD"), os.Getenv("PG_HOST"),
-		os.Getenv("PG_PORT"), os.Getenv("PG_DBNAME"), os.Getenv("PG_SSLMODE"),
+		os.Getenv("PGUSER"), os.Getenv("PGPASSWORD"), os.Getenv("PGHOST"),
+		os.Getenv("PGPORT"), os.Getenv("PGDATABASE"), os.Getenv("PGSSLMODE"),
 	))
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to db")
@@ -118,8 +117,7 @@ func main() {
 }
 
 func start(client mqtt.Client, sigs chan os.Signal) error {
-	ctx := context.Background()
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var wg sync.WaitGroup

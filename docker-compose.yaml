@@ -19,6 +19,10 @@ services:
     db:
         container_name: postgres
         image: postgres:15.0-bullseye
+        command: >
+            -c ssl=on 
+            -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem 
+            -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
         restart: unless-stopped
         ports:
             - ${PGPORT}:${PGPORT}
